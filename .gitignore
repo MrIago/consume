@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Local temp / working files
+*.log
+.DS_Store
+
+# Exported browser cookies (created at runtime — never commit, may contain session tokens)
+watch-*-cookies.txt
+cookies.txt
