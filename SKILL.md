@@ -83,9 +83,16 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/lib/config.py"   # show current (masked)
 Recognized: `GROQ_API_KEY`, `OPENAI_API_KEY`, `WATCH_TRANSCRIBE`,
 `WATCH_YOUTUBE_API_KEY`, `WATCH_COOKIES_FROM_BROWSER`.
 
+**First run / something missing?** This skill relies on external tools (yt-dlp,
+ffmpeg, …) that a plugin install does NOT install. The first time it's used on a
+machine — or whenever a script reports a missing dependency — do a **guided
+setup**: read `references/install.md`, inspect the user's actual system (OS,
+package manager, Python, GPU), and install **only what's missing**, globally,
+with their confirmation. Don't guess one package manager; build the right
+commands for their machine.
+
 **Portability** — commands below use `python3` (macOS/Linux). **On Windows, use
-`python`** instead. Run `scripts/check.py` first if anything seems missing — it
-reports missing tools with the exact install command.
+`python`** instead. `scripts/check.py` reports what's missing with install hints.
 
 ## The YouTube tools — fetch only what a need points at
 

@@ -51,6 +51,11 @@ private content — so it does **not** run on claude.ai (the web sandbox has no
 binaries or your cookies). Works on **Linux, macOS, and Windows** (on Windows use
 `python` instead of `python3`).
 
+> **Easiest setup: just ask.** After installing the plugin, say *"set up
+> consume"* (or just use it). Claude inspects your system — OS, package manager,
+> Python, GPU — and installs **only what's missing**, with the right commands for
+> your machine. No manual checklist needed. The list below is just the reference.
+
 **Tools** (run `python3 scripts/check.py` to verify):
 - `yt-dlp` + `ffmpeg` — required (download, frames, audio)
 - `gallery-dl` — for Instagram / Reddit

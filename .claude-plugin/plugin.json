@@ -1,6 +1,6 @@
 {
   "name": "consume",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Consume and study any content the user links — YouTube, Instagram, Twitter/X, Reddit, LinkedIn. Fetches transcript/caption/text on demand and only the specific frames or images it needs. Local-first: GPU transcription via faster-whisper, no paid APIs.",
   "author": {
     "name": "Iago Lima Toledo"
