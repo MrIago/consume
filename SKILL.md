@@ -120,9 +120,14 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/youtube/meta.py" "<url>"
 # a channel: list videos (fast, titles only):
 python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/youtube/meta.py" "<channel-url-or-@handle>" --channel --limit 10
 
+# paginate by video: --offset N skips the first N (e.g. videos 11-20):
+python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/youtube/meta.py" "<channel>" --channel --limit 10 --offset 10
+
 # rank a channel by views (add --stats; ~1.2s/video, so keep --limit sane):
 python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/youtube/meta.py" "<channel>" --channel --limit 15 --stats --sort views
 ```
+
+`--offset` paginates in both modes (Data API and the yt-dlp fallback).
 
 The video mode prints a thumbnail path — **Read it** to see the cover the
 channel used to sell the click; title and thumbnail often differ on purpose.

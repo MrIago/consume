@@ -161,9 +161,10 @@ def fetch_thumbnail(url: str, out_dir: Path) -> Path | None:
     return hits[0] if hits else None
 
 
-def _channel_videos_api(url: str, limit: int) -> list[dict] | None:
+def _channel_videos_api(url: str, limit: int, offset: int = 0) -> list[dict] | None:
     """Channel videos with metrics via the Data API (always includes stats —
     they come essentially for free in batches of 50). Returns None to fall back.
+    `offset` skips the first N videos (pagination).
     """
     if not API_KEY:
         return None
@@ -175,12 +176,14 @@ def _channel_videos_api(url: str, limit: int) -> list[dict] | None:
         if not cd.get("items"):
             return None
         uploads = cd["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
-        # page through the uploads playlist until we have `limit` ids
+        # Page the uploads playlist until we have offset+limit ids, then drop
+        # the first `offset` (the playlistItems API has no random offset).
+        want = offset + limit
         ids: list[str] = []
         page = None
-        while len(ids) < limit:
+        while len(ids) < want:
             kw = {"part": "contentDetails", "playlistId": uploads,
-                  "maxResults": min(50, limit - len(ids))}
+                  "maxResults": min(50, want - len(ids))}
             if page:
                 kw["pageToken"] = page
             pl = _api_get("playlistItems", **kw)
@@ -188,6 +191,7 @@ def _channel_videos_api(url: str, limit: int) -> list[dict] | None:
             page = pl.get("nextPageToken")
             if not page:
                 break
+        ids = ids[offset:offset + limit]
         out: list[dict] = []
         for i in range(0, len(ids), 50):  # videos endpoint: up to 50 ids/call
             batch = ids[i:i + 50]
@@ -208,28 +212,32 @@ def _channel_videos_api(url: str, limit: int) -> list[dict] | None:
         return None
 
 
-def channel_videos(url: str, limit: int, with_stats: bool) -> list[dict]:
+def channel_videos(url: str, limit: int, with_stats: bool, offset: int = 0) -> list[dict]:
     """List a channel's videos. Without stats it's fast (titles only); with
     stats it pulls view/like counts per video so the caller can rank.
 
     With the Data API key set, always returns stats (they're cheap there) and
-    `with_stats` only affects how the yt-dlp fallback behaves.
+    `with_stats` only affects how the yt-dlp fallback behaves. `offset`
+    paginates (skip the first N videos).
     """
-    api = _channel_videos_api(url, limit)
+    api = _channel_videos_api(url, limit, offset=offset)
     if api is not None:
         return api
     _need_ytdlp()
     if "/videos" not in url and "/streams" not in url:
         url = url.rstrip("/") + "/videos"
+    # yt-dlp paginates natively with 1-based --playlist-start/--playlist-end.
+    start = offset + 1
+    end = offset + limit
     if with_stats:
         # full extraction per entry → view_count/like_count populated (~1.2s/video)
         fmt = "%(id)s\t%(view_count)s\t%(like_count)s\t%(upload_date)s\t%(title)s"
-        cmd = ["yt-dlp", "--skip-download", "--playlist-end", str(limit),
-               "--print", fmt, "--", url]
+        cmd = ["yt-dlp", "--skip-download", "--playlist-start", str(start),
+               "--playlist-end", str(end), "--print", fmt, "--", url]
     else:
         fmt = "%(id)s\t\t\t\t%(title)s"
-        cmd = ["yt-dlp", "--flat-playlist", "--playlist-end", str(limit),
-               "--print", fmt, "--", url]
+        cmd = ["yt-dlp", "--flat-playlist", "--playlist-start", str(start),
+               "--playlist-end", str(end), "--print", fmt, "--", url]
     result = subprocess.run(cmd, capture_output=True, text=True)
     out: list[dict] = []
     for line in (result.stdout or "").splitlines():
@@ -311,6 +319,7 @@ def main() -> int:
     ap.add_argument("url", help="Video URL, or channel URL/@handle with --channel")
     ap.add_argument("--channel", action="store_true", help="Treat URL as a channel and list its videos")
     ap.add_argument("--limit", type=int, default=10, help="Channel mode: how many videos to list (default 10)")
+    ap.add_argument("--offset", type=int, default=0, help="Channel mode: skip the first N videos (pagination, e.g. --limit 10 --offset 10 for videos 11-20)")
     ap.add_argument("--stats", action="store_true", help="Channel mode: include view/like counts (slower)")
     ap.add_argument("--sort", choices=["views", "date"], default="date", help="Channel mode: ranking (needs --stats for views)")
     ap.add_argument("--no-thumb", action="store_true", help="Video mode: skip downloading the thumbnail")
@@ -319,7 +328,7 @@ def main() -> int:
     if args.channel:
         src = "Data API" if API_KEY else "yt-dlp"
         print(f"[watch] listing channel videos via {src} (stats={args.stats or bool(API_KEY)})…", file=sys.stderr)
-        videos = channel_videos(args.url, limit=args.limit, with_stats=args.stats)
+        videos = channel_videos(args.url, limit=args.limit, with_stats=args.stats, offset=args.offset)
         _print_channel(videos, sort=args.sort)
         return 0
 
