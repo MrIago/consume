@@ -140,13 +140,18 @@ def fetch_audio(url: str, out_dir: Path) -> Path:
     return audio
 
 
-def transcribe(audio_path: Path, offset: float = 0.0) -> list[dict]:
+def _load_model():
+    """Load faster-whisper once (GPU, CPU fallback). The 4GB GPU fits one model,
+    so we load a single model and reuse it across reels in batch mode."""
     from faster_whisper import WhisperModel
     try:
-        model = WhisperModel(MODEL_ID, device=DEVICE, compute_type=COMPUTE)
+        return WhisperModel(MODEL_ID, device=DEVICE, compute_type=COMPUTE)
     except Exception as exc:
         print(f"[watch] GPU load failed ({exc}); CPU fallback", file=sys.stderr)
-        model = WhisperModel(MODEL_ID, device="cpu", compute_type="int8")
+        return WhisperModel(MODEL_ID, device="cpu", compute_type="int8")
+
+
+def _transcribe_one(model, audio_path: Path, offset: float = 0.0) -> list[dict]:
     segments, info = model.transcribe(str(Path(audio_path).resolve()), language=None,
                                       beam_size=1, vad_filter=True, condition_on_previous_text=False)
     out = []
@@ -158,22 +163,81 @@ def transcribe(audio_path: Path, offset: float = 0.0) -> list[dict]:
     return out
 
 
+def transcribe(audio_path: Path, offset: float = 0.0) -> list[dict]:
+    """Convenience: load model + transcribe one file (single-reel path)."""
+    return _transcribe_one(_load_model(), audio_path, offset)
+
+
 def fmt_transcript(segs: list[dict]) -> str:
     return "\n".join(f"[{int(s['start'])//60:02d}:{int(s['start'])%60:02d}] {s['text']}" for s in segs)
 
 
+def _transcribe_batch(urls: list[str], work: Path) -> int:
+    """Transcribe several reels with the model loaded ONCE.
+
+    This is the on-demand batch path for analyzing a profile: pass many reel
+    URLs and the heavy model load happens a single time, with audio downloads
+    running in parallel. Far faster than invoking the script per reel.
+    """
+    import concurrent.futures
+
+    # Audio download is I/O-bound (yt-dlp) → parallel. Fetch caption too.
+    print(f"[watch] downloading audio for {len(urls)} reel(s)…", file=sys.stderr)
+
+    def dl(idx_url):
+        idx, url = idx_url
+        d = work / f"r{idx}"
+        try:
+            audio = fetch_audio(url, d)
+            cap = reel_meta(url).get("caption", "")
+            return idx, url, audio, cap, None
+        except SystemExit as exc:
+            return idx, url, None, "", str(exc)
+
+    fetched: list = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(6, len(urls))) as ex:
+        for res in ex.map(dl, list(enumerate(urls))):
+            fetched.append(res)
+    fetched.sort()
+
+    model = _load_model()
+    print(f"[watch] model loaded; transcribing {len(fetched)} reel(s)…", file=sys.stderr)
+
+    print(f"# Instagram reels — {len(urls)} transcripts\n")
+    for idx, url, audio, cap, err in fetched:
+        print(f"## Reel {idx + 1}: {url}\n")
+        if err:
+            print(f"_(skipped — {err})_\n")
+            continue
+        if cap:
+            print(f"**Caption:** {cap}\n")
+        segs = _transcribe_one(model, audio)
+        print("```")
+        print(fmt_transcript(segs) if segs else "(no speech — likely a silent/visual reel; use --frames)")
+        print("```\n")
+    print(f"_Work dir: `{work}` — delete when done._")
+    return 0
+
+
 def main() -> int:
-    ap = argparse.ArgumentParser(prog="reel", description="Consume an Instagram reel on demand.")
-    ap.add_argument("url", help="Reel/post URL")
+    ap = argparse.ArgumentParser(prog="reel", description="Consume one or more Instagram reels on demand.")
+    ap.add_argument("url", nargs="+", help="Reel/post URL(s). Pass several to batch-transcribe.")
     ap.add_argument("--transcribe", action="store_true", help="Transcribe the audio locally")
-    ap.add_argument("--segments", help="Transcribe only these slices, e.g. 0:05-0:20,1:00-1:15")
     ap.add_argument("--frames", help="Comma-separated timestamps to grab (e.g. 5,35,60)")
     ap.add_argument("--resolution", type=int, default=512, help="Frame width (default 512)")
     args = ap.parse_args()
 
-    print(f"[watch] reading reel (cookies={COOKIES})…", file=sys.stderr)
-    meta = reel_meta(args.url)
     work = Path(tempfile.mkdtemp(prefix="watch-ig-reel-"))
+
+    # --- batch transcribe: several reels, model loaded once ---
+    if len(args.url) > 1:
+        if not args.transcribe:
+            print("[watch] multiple URLs given — batch-transcribing them.", file=sys.stderr)
+        return _transcribe_batch(args.url, work)
+
+    url = args.url[0]
+    print(f"[watch] reading reel (cookies={COOKIES})…", file=sys.stderr)
+    meta = reel_meta(url)
 
     # --- frames mode ---
     if args.frames:
@@ -187,13 +251,10 @@ def main() -> int:
         print(f"\n_Frames in: `{work}` — delete when done._")
         return 0
 
-    # --- transcribe mode ---
-    if args.transcribe or args.segments:
-        # Instagram reels are short; transcribe the whole audio (slicing a tiny
-        # clip rarely pays off). --segments is accepted for API symmetry but we
-        # transcribe the full audio and the caller can read the part it needs.
+    # --- transcribe mode (single reel) ---
+    if args.transcribe:
         print("[watch] downloading reel audio…", file=sys.stderr)
-        audio = fetch_audio(args.url, work)
+        audio = fetch_audio(url, work)
         segs = transcribe(audio)
         print("# Instagram reel — transcript\n")
         print("## Caption\n```")
@@ -207,7 +268,7 @@ def main() -> int:
     # --- default: caption + thumbnail + duration ---
     thumb = fetch_thumb(meta["thumb_url"], work)
     print("# Instagram reel\n")
-    print(f"- **URL:** {args.url}")
+    print(f"- **URL:** {url}")
     if meta.get("likes") is not None:
         print(f"- **Likes:** {meta['likes']}")
     if meta.get("duration"):

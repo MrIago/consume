@@ -149,14 +149,15 @@ the most important part.
 ### Profile index — the starting point for "study this profile"
 
 ```bash
-python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/instagram/profile.py" "https://www.instagram.com/<user>/" --limit 12 [--sort likes|date]
+python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/instagram/profile.py" "https://www.instagram.com/<user>/" --limit 12 [--offset N] [--sort likes|date]
 ```
 
 Lists posts with type · likes · date · caption — without downloading media. This
 is the index: from it, decide which posts the task actually needs, then consume
 those. `--sort likes` ranks by most-liked (likes is the only engagement metric
-Instagram gives). Keep `--limit` to what the task needs (large limits fetch many
-slides and can hit Instagram's rate-limit).
+Instagram gives). `--offset N` paginates by post — e.g. `--limit 9 --offset 9`
+gives posts 10-18. Keep `--limit` to what the task needs (large limits fetch
+many slides and can hit Instagram's rate-limit).
 
 ### A post — caption + media (image / carousel / mixed)
 
@@ -177,10 +178,15 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/instagram/reel.py" "<post-url>"
 python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/instagram/reel.py" "<post-url>" --transcribe
 # see specific moments (seek, no download):
 python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/instagram/reel.py" "<post-url>" --frames 5,35,60
+# BATCH — transcribe several reels at once (e.g. all reels from a profile index):
+python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/instagram/reel.py" "<url1>" "<url2>" "<url3>"
 ```
 
 Same on-demand discipline as YouTube: start with caption + cover, and only
-transcribe or pull frames when the task needs the speech or the screen.
+transcribe or pull frames when the task needs the speech or the screen. When a
+task needs several reels transcribed (analyzing a profile), pass all the URLs in
+one call — the model loads once and audio downloads in parallel, far faster than
+one call per reel.
 
 ## The Twitter/X tools — fetch only what a need points at
 

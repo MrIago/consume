@@ -33,7 +33,7 @@ def _need_gallery_dl():
         raise SystemExit("gallery-dl is not installed (pip install gallery-dl)")
 
 
-def list_posts(profile_url: str, limit: int) -> list[dict]:
+def list_posts(profile_url: str, limit: int, offset: int = 0) -> list[dict]:
     """Group gallery-dl's per-slide entries into posts (by post_shortcode).
 
     gallery-dl flattens a carousel into one entry per slide; the real post is
@@ -45,10 +45,12 @@ def list_posts(profile_url: str, limit: int) -> list[dict]:
     if not url.endswith("/posts"):
         url += "/posts"
     # gallery-dl's --range counts SLIDES, not posts; carousels expand to many.
-    # Most posts are 1-2 slides, so ~3x covers the typical mix. Cap the range so
-    # a big --limit doesn't fetch hundreds of slides and trip Instagram's
-    # rate-limit. For deep ranking, raise --limit in steps rather than all at once.
-    span = min(max(limit * 3, limit + 5), 60)
+    # We want posts [offset, offset+limit). Most posts are 1-2 slides, so ~3x
+    # covers the typical mix; we then page by *post* on our side. Fetch from
+    # slide 1 (we need earlier posts to know where the offset falls) up to a
+    # capped span, to avoid pulling hundreds of slides / tripping rate-limits.
+    need_posts = offset + limit
+    span = min(max(need_posts * 3, need_posts + 5), 90)
     cmd = ["gallery-dl", "--cookies-from-browser", COOKIES,
            "--range", f"1-{span}", "--no-download", "-j", url]
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -85,7 +87,7 @@ def list_posts(profile_url: str, limit: int) -> list[dict]:
         posts[ps]["slides"].append("video" if m.get("video_url") else "image")
 
     out = []
-    for ps in order[:limit]:
+    for ps in order[offset:offset + limit]:
         p = posts[ps]
         p["type"] = _classify(p["slides"])
         out.append(p)
@@ -113,12 +115,13 @@ def main() -> int:
     ap = argparse.ArgumentParser(prog="profile", description="List an Instagram profile's posts.")
     ap.add_argument("url", help="Profile URL, e.g. https://www.instagram.com/user/")
     ap.add_argument("--limit", type=int, default=12, help="How many posts to list (default 12)")
+    ap.add_argument("--offset", type=int, default=0, help="Skip the first N posts (pagination, e.g. --offset 9 --limit 9 for posts 10-18)")
     ap.add_argument("--sort", choices=["date", "likes"], default="date",
                     help="Order by most recent (date) or most liked (likes)")
     args = ap.parse_args()
 
     print(f"[watch] listing Instagram profile (cookies={COOKIES})…", file=sys.stderr)
-    posts = list_posts(args.url, limit=args.limit)
+    posts = list_posts(args.url, limit=args.limit, offset=args.offset)
     if args.sort == "likes":
         posts.sort(key=lambda p: p["likes"] or -1, reverse=True)
 
