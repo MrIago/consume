@@ -10,8 +10,14 @@ message instead of a raw error deep inside a script.
 Checks:
   - yt-dlp   (required: download, captions, metadata, stream URLs)
   - ffmpeg   (required: frames, audio extraction)
-  - faster-whisper (optional: local transcription; only needed for Level 1)
+  - faster-whisper (optional: LOCAL transcription only — NOT needed if a Groq or
+    OpenAI key is configured, since transcription then runs via the API)
   - curl_cffi / cookies are platform-specific and checked by those platforms.
+
+Transcription needs one of: a GPU + faster-whisper (local, free), or GROQ_API_KEY
+/ OPENAI_API_KEY (cloud, works without a GPU). Configure keys with
+scripts/lib/config.py. secretstorage is Linux-only (macOS/Windows read cookies
+without it).
 """
 from __future__ import annotations
 

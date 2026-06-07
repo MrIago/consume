@@ -10,3 +10,6 @@ __pycache__/
 # Exported browser cookies (created at runtime — never commit, may contain session tokens)
 watch-*-cookies.txt
 cookies.txt
+
+# Secrets / config (the real one lives in ~/.config/consume/.env — never commit one here)
+.env

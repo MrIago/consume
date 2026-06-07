@@ -29,13 +29,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-COOKIES = os.environ.get("WATCH_COOKIES_FROM_BROWSER", "chrome:Profile 1")
-MODEL_ID = os.environ.get(
-    "WATCH_WHISPER_MODEL",
-    os.environ.get("VOICEFLOW_MODEL_ID", "deepdml/faster-whisper-large-v3-turbo-ct2"),
-)
-DEVICE = os.environ.get("WATCH_WHISPER_DEVICE", "cuda")
-COMPUTE = os.environ.get("WATCH_WHISPER_COMPUTE", "int8_float16")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+import config  # noqa: E402  — reads env var OR ~/.config/consume/.env
+# Browser/profile for login cookies. Default "chrome" = Chrome's default profile
+# (most common). Use "chrome:Profile 1" for a named profile, or "firefox"/"edge".
+COOKIES = config.get("WATCH_COOKIES_FROM_BROWSER", "chrome")
 
 
 # ---- time helpers ----------------------------------------------------------
@@ -140,36 +138,11 @@ def fetch_audio(url: str, out_dir: Path) -> Path:
     return audio
 
 
-def _load_model():
-    """Load faster-whisper once (GPU, CPU fallback). The 4GB GPU fits one model,
-    so we load a single model and reuse it across reels in batch mode."""
-    from faster_whisper import WhisperModel
-    try:
-        return WhisperModel(MODEL_ID, device=DEVICE, compute_type=COMPUTE)
-    except Exception as exc:
-        print(f"[watch] GPU load failed ({exc}); CPU fallback", file=sys.stderr)
-        return WhisperModel(MODEL_ID, device="cpu", compute_type="int8")
-
-
-def _transcribe_one(model, audio_path: Path, offset: float = 0.0) -> list[dict]:
-    segments, info = model.transcribe(str(Path(audio_path).resolve()), language=None,
-                                      beam_size=1, vad_filter=True, condition_on_previous_text=False)
-    out = []
-    for seg in segments:
-        t = (seg.text or "").strip()
-        if t:
-            out.append({"start": round(seg.start + offset, 2), "text": t})
-    print(f"[watch] transcribed {len(out)} segments, lang={info.language}", file=sys.stderr)
-    return out
-
-
-def transcribe(audio_path: Path, offset: float = 0.0) -> list[dict]:
-    """Convenience: load model + transcribe one file (single-reel path)."""
-    return _transcribe_one(_load_model(), audio_path, offset)
-
-
-def fmt_transcript(segs: list[dict]) -> str:
-    return "\n".join(f"[{int(s['start'])//60:02d}:{int(s['start'])%60:02d}] {s['text']}" for s in segs)
+# Transcription is shared across platforms — use the core (Groq/OpenAI/local +
+# chunking; batch reuses one local model or parallelizes API calls). See
+# scripts/lib/transcribe.py.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
+from transcribe import transcribe, transcribe_many, format_transcript as fmt_transcript  # noqa: E402
 
 
 def _transcribe_batch(urls: list[str], work: Path) -> int:
@@ -200,8 +173,14 @@ def _transcribe_batch(urls: list[str], work: Path) -> int:
             fetched.append(res)
     fetched.sort()
 
-    model = _load_model()
-    print(f"[watch] model loaded; transcribing {len(fetched)} reel(s)…", file=sys.stderr)
+    # Transcribe all successfully-fetched reels via the core (one local model
+    # reused, or parallel API calls). Map results back by index.
+    ok = [(idx, audio) for idx, _u, audio, _c, err in fetched if audio and not err]
+    print(f"[watch] transcribing {len(ok)} reel(s)…", file=sys.stderr)
+    segs_by_idx = {}
+    if ok:
+        many = transcribe_many([a for _i, a in ok])
+        segs_by_idx = {idx: segs for (idx, _a), segs in zip(ok, many)}
 
     print(f"# Instagram reels — {len(urls)} transcripts\n")
     for idx, url, audio, cap, err in fetched:
@@ -211,7 +190,7 @@ def _transcribe_batch(urls: list[str], work: Path) -> int:
             continue
         if cap:
             print(f"**Caption:** {cap}\n")
-        segs = _transcribe_one(model, audio)
+        segs = segs_by_idx.get(idx, [])
         print("```")
         print(fmt_transcript(segs) if segs else "(no speech — likely a silent/visual reel; use --frames)")
         print("```\n")

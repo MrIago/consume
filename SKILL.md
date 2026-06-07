@@ -54,8 +54,38 @@ Detect the platform from the URL and use the matching scripts in
 For other platforms, tell the user it's not supported yet.
 
 Several platforms read login cookies from a logged-in browser via
-`WATCH_COOKIES_FROM_BROWSER` (default `chrome:Profile 1`). On Linux, reading
-Chrome cookies needs `secretstorage`.
+`WATCH_COOKIES_FROM_BROWSER` (default `chrome` = Chrome's default profile). For a
+named profile use `chrome:Profile 1`; other browsers: `firefox`, `edge`. On
+**Linux only**, reading Chrome's cookies needs `secretstorage`
+(`pip install secretstorage`); macOS/Windows don't. If a platform that needs
+login fails, tell the user to set this to a browser where they're logged in.
+
+## Setup, transcription backends & portability
+
+**Transcription** (the `transcribe.py` / reel `--transcribe` / video `--transcribe`
+tools) picks a backend automatically:
+- If `GROQ_API_KEY` is set → Groq (free tier, fast, keeps timestamps). **Best for
+  users without a GPU.**
+- else if `OPENAI_API_KEY` is set → OpenAI `whisper-1` (keeps timestamps).
+- else → local faster-whisper on the GPU, CPU fallback if no GPU (slow — warns).
+
+All three keep per-segment timestamps, so frame-alignment works with any of them.
+Long audio (>~20min) is automatically chunked (overlapping, deduped) for the API
+backends. Override the choice with `WATCH_TRANSCRIBE=auto|groq|openai|local`.
+
+**Configuring keys/settings** — they live in env vars OR a persistent file at
+`~/.config/consume/.env`. If the user gives you a key, save it (never print it
+back):
+```bash
+python3 "${CLAUDE_SKILL_DIR}/scripts/lib/config.py" GROQ_API_KEY=...
+python3 "${CLAUDE_SKILL_DIR}/scripts/lib/config.py"   # show current (masked)
+```
+Recognized: `GROQ_API_KEY`, `OPENAI_API_KEY`, `WATCH_TRANSCRIBE`,
+`WATCH_YOUTUBE_API_KEY`, `WATCH_COOKIES_FROM_BROWSER`.
+
+**Portability** — commands below use `python3` (macOS/Linux). **On Windows, use
+`python`** instead. Run `scripts/check.py` first if anything seems missing — it
+reports missing tools with the exact install command.
 
 ## The YouTube tools — fetch only what a need points at
 

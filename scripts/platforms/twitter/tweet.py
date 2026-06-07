@@ -31,7 +31,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-COOKIES = os.environ.get("WATCH_COOKIES_FROM_BROWSER", "chrome:Profile 1")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+import config  # noqa: E402  — reads env var OR ~/.config/consume/.env
+# Browser/profile for login cookies. Default "chrome" = Chrome's default profile
+# (most common). Use "chrome:Profile 1" for a named profile, or "firefox"/"edge".
+COOKIES = config.get("WATCH_COOKIES_FROM_BROWSER", "chrome")
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
 

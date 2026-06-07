@@ -25,13 +25,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-COOKIES = os.environ.get("WATCH_COOKIES_FROM_BROWSER", "chrome:Profile 1")
-MODEL_ID = os.environ.get(
-    "WATCH_WHISPER_MODEL",
-    os.environ.get("VOICEFLOW_MODEL_ID", "deepdml/faster-whisper-large-v3-turbo-ct2"),
-)
-DEVICE = os.environ.get("WATCH_WHISPER_DEVICE", "cuda")
-COMPUTE = os.environ.get("WATCH_WHISPER_COMPUTE", "int8_float16")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+import config  # noqa: E402  — reads env var OR ~/.config/consume/.env
+# Browser/profile for login cookies. Default "chrome" = Chrome's default profile
+# (most common). Use "chrome:Profile 1" for a named profile, or "firefox"/"edge".
+COOKIES = config.get("WATCH_COOKIES_FROM_BROWSER", "chrome")
 _CK = Path(tempfile.gettempdir()) / "watch-reddit-cookies.txt"
 
 
@@ -124,22 +122,10 @@ def extract_frames(src, out_dir: Path, timestamps, resolution=512):
     return [results[i] for i in sorted(results)]
 
 
-def transcribe(audio_path: Path) -> list[dict]:
-    from faster_whisper import WhisperModel
-    try:
-        model = WhisperModel(MODEL_ID, device=DEVICE, compute_type=COMPUTE)
-    except Exception as exc:
-        print(f"[watch] GPU load failed ({exc}); CPU fallback", file=sys.stderr)
-        model = WhisperModel(MODEL_ID, device="cpu", compute_type="int8")
-    segments, info = model.transcribe(str(Path(audio_path).resolve()), language=None,
-                                      beam_size=1, vad_filter=True, condition_on_previous_text=False)
-    out = [{"start": round(s.start, 2), "text": s.text.strip()} for s in segments if s.text.strip()]
-    print(f"[watch] transcribed {len(out)} segments, lang={info.language}", file=sys.stderr)
-    return out
-
-
-def fmt_transcript(segs):
-    return "\n".join(f"[{int(s['start'])//60:02d}:{int(s['start'])%60:02d}] {s['text']}" for s in segs)
+# Transcription is shared across platforms — use the core (Groq/OpenAI/local +
+# chunking). See scripts/lib/transcribe.py.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
+from transcribe import transcribe, format_transcript as fmt_transcript  # noqa: E402
 
 
 def main() -> int:

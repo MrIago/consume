@@ -46,33 +46,56 @@ never less.
 
 ## Requirements
 
-`/consume` is **local-first by design** — it runs on your machine, uses your GPU
-for free transcription, and your browser session for private content. That makes
-it great in Claude Code, but it does **not** run on claude.ai (the web sandbox
-has no GPU, binaries, or your cookies).
+`/consume` runs on your machine (Claude Code) and uses your browser session for
+private content — so it does **not** run on claude.ai (the web sandbox has no
+binaries or your cookies). Works on **Linux, macOS, and Windows** (on Windows use
+`python` instead of `python3`).
 
 **Tools** (run `python3 scripts/check.py` to verify):
 - `yt-dlp` + `ffmpeg` — required (download, frames, audio)
-- `faster-whisper` — for local GPU transcription (free, keeps timestamps)
 - `gallery-dl` — for Instagram / Reddit
 - `curl_cffi` — for Twitter/X (impersonation)
-- `secretstorage` — on Linux, to read Chrome cookies
+- `faster-whisper` — only for **local** transcription (see below)
+- `secretstorage` — **Linux only**, to read Chrome cookies (macOS/Windows don't need it)
 
 ```bash
 pipx install yt-dlp
-pip install faster-whisper gallery-dl curl_cffi secretstorage
+pip install gallery-dl curl_cffi
+pip install faster-whisper            # only if you want local transcription
+pip install secretstorage            # Linux only
 # ffmpeg: sudo apt install ffmpeg   (or: brew install ffmpeg)
 ```
 
-**Login (cookies).** Instagram, Reddit, and LinkedIn image posts need a
-logged-in browser session. Set the browser/profile to read cookies from:
+### Transcription — pick what fits your machine
+
+Transcription auto-selects a backend; **all keep per-segment timestamps** (so
+frame-alignment works either way):
+
+| Your setup | What happens | Setup |
+|---|---|---|
+| **No GPU** (most people) | Cloud transcription via **Groq** (free tier, fast) | set `GROQ_API_KEY` |
+| Have an NVIDIA GPU | Free **local** transcription (faster-whisper) | nothing — it's the default |
+| Prefer OpenAI | Cloud via `whisper-1` | set `OPENAI_API_KEY` |
+| No GPU **and** no key | Local on CPU — works but **slow** | set a key to speed up |
+
+Long audio is auto-chunked (overlapping + deduped) for the cloud backends. Force
+a choice with `WATCH_TRANSCRIBE=auto|groq|openai|local`.
+
+### Configuring keys & login (persists across sessions)
+
+Settings live in env vars **or** `~/.config/consume/.env`. Easiest: just tell
+Claude your key in chat and it saves it — or run:
 
 ```bash
-export WATCH_COOKIES_FROM_BROWSER="chrome:Profile 1"   # default
+python3 scripts/lib/config.py GROQ_API_KEY=...                    # transcription (no GPU needed)
+python3 scripts/lib/config.py WATCH_COOKIES_FROM_BROWSER=chrome   # default profile; or "chrome:Profile 1", "firefox", "edge"
+python3 scripts/lib/config.py WATCH_YOUTUBE_API_KEY=...           # optional: rich YouTube channel ranking
+python3 scripts/lib/config.py                                     # show current (masked)
 ```
 
-**Optional.** `export WATCH_YOUTUBE_API_KEY=…` for fast, rich YouTube channel
-ranking via the official Data API.
+**Login (cookies).** Instagram, Reddit, and LinkedIn image posts need a
+logged-in browser session — set `WATCH_COOKIES_FROM_BROWSER` to a browser/profile
+where you're logged in (default `chrome`).
 
 ## Install
 
@@ -102,6 +125,9 @@ easy to tweak without touching the others.
 ```
 scripts/
 ├── check.py                 # dependency preflight
+├── lib/                     # shared core
+│   ├── transcribe.py        # Groq / OpenAI / local, timestamps, auto-chunking
+│   └── config.py            # keys & settings (env var or ~/.config/consume/.env)
 └── platforms/
     ├── youtube/    captions · transcribe · frames · meta
     ├── instagram/  profile · post · reel
@@ -110,10 +136,12 @@ scripts/
     └── linkedin/   post · video
 ```
 
-Transcription is local (faster-whisper, e.g. `large-v3-turbo`), so it's free,
-private, keeps per-segment timestamps, and has no upload size limit — a 2.5h
-video works. Frames are pulled by seeking directly to the timestamps you need
-(no full-video decode), which is ~167× faster than scanning the whole file.
+Transcription runs via Groq, OpenAI, or local faster-whisper — whichever fits
+your machine — and **all keep per-segment timestamps**, so frames line up with
+the words. Local has no upload limit (a 2.5h video works); the cloud backends
+auto-chunk long audio (overlapping + deduped) and run the chunks in parallel.
+Frames are pulled by seeking directly to the timestamps you need (no full-video
+decode), ~167× faster than scanning the whole file.
 
 ## License
 

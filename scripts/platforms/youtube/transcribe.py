@@ -23,12 +23,6 @@ import tempfile
 from pathlib import Path
 
 # Same local model mr-whisper uses; fits a 4GB GPU at int8_float16 (~1.9GB).
-MODEL_ID = os.environ.get(
-    "WATCH_WHISPER_MODEL",
-    os.environ.get("VOICEFLOW_MODEL_ID", "deepdml/faster-whisper-large-v3-turbo-ct2"),
-)
-DEVICE = os.environ.get("WATCH_WHISPER_DEVICE", "cuda")
-COMPUTE = os.environ.get("WATCH_WHISPER_COMPUTE", "int8_float16")
 
 
 def fetch_audio(url: str, out_dir: Path, start: float | None = None,
@@ -94,47 +88,9 @@ def parse_time(value: str) -> float:
     raise SystemExit(f"Cannot parse time: {value!r} (expected SS, MM:SS, or HH:MM:SS)")
 
 
-def _load_model():
-    """Load faster-whisper once, GPU with CPU fallback. The 4GB GPU fits one
-    model — so we load a single model and reuse it across slices, rather than
-    running several in parallel (which would OOM)."""
-    from faster_whisper import WhisperModel
-    try:
-        model = WhisperModel(MODEL_ID, device=DEVICE, compute_type=COMPUTE)
-        return model, f"{DEVICE}/{COMPUTE}"
-    except Exception as exc:
-        print(f"[watch] GPU load failed ({exc}); falling back to CPU", file=sys.stderr)
-        return WhisperModel(MODEL_ID, device="cpu", compute_type="int8"), "cpu/int8"
-
-
-def _transcribe_one(model, audio_path: Path, offset: float = 0.0) -> list[dict]:
-    """Transcribe one audio file with an already-loaded model. `offset` shifts
-    timestamps to absolute video time so slices line up with captions/frames."""
-    segments, info = model.transcribe(
-        str(Path(audio_path).resolve()),
-        language=None,            # auto-detect; pt/en code-switching just works
-        beam_size=1,
-        vad_filter=True,
-        condition_on_previous_text=False,
-    )
-    out: list[dict] = []
-    for seg in segments:
-        text = (seg.text or "").strip()
-        if text:
-            out.append({
-                "start": round(seg.start + offset, 2),
-                "end": round(seg.end + offset, 2),
-                "text": text,
-            })
-    print(f"[watch]   slice@{int(offset)}s: {len(out)} segments, lang={info.language}", file=sys.stderr)
-    return out
-
-
-def transcribe_local(audio_path: Path, offset: float = 0.0) -> list[dict]:
-    """Convenience: load model + transcribe one file (whole-video path)."""
-    model, used = _load_model()
-    print(f"[watch] model loaded ({used})", file=sys.stderr)
-    return _transcribe_one(model, audio_path, offset)
+# Transcription is shared across platforms — use the core (Groq/OpenAI/local +
+# chunking). See scripts/lib/transcribe.py. main() imports transcribe_many from it.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
 
 
 def format_transcript(segments: list[dict]) -> str:
@@ -183,12 +139,18 @@ def main() -> int:
             audios.append((idx, s, a))
     audios.sort()
 
-    # Load the model ONCE, transcribe every slice with it (GPU fits one model).
-    model, used = _load_model()
-    print(f"[watch] model loaded ({used}); transcribing {len(audios)} slice(s)…", file=sys.stderr)
+    # Transcribe every slice via the core (one local model reused, or parallel
+    # API calls), then shift each slice's timestamps to absolute video time.
+    print(f"[watch] transcribing {len(audios)} slice(s)…", file=sys.stderr)
+    from transcribe import transcribe_many
+    slice_segs = transcribe_many([a for _idx, _s, a in audios])
     all_segs: list[dict] = []
-    for _idx, s, a in audios:
-        all_segs += _transcribe_one(model, a, offset=s or 0.0)
+    for (_idx, s, _a), segs in zip(audios, slice_segs):
+        off = s or 0.0
+        for seg in segs:
+            seg["start"] = round(seg["start"] + off, 2)
+            seg["end"] = round(seg["end"] + off, 2)
+        all_segs += segs
 
     all_segs.sort(key=lambda x: x["start"])
     if not all_segs:
