@@ -3,7 +3,7 @@
 **Give Claude eyes and ears for online content — on demand.**
 
 Claude can read a webpage and run a script, but it can't *watch a video* or
-*scroll a feed*. `/consume` gives it that, across **YouTube, Instagram,
+*scroll a feed*. `/consume` gives it that, across **YouTube, Instagram, TikTok,
 Twitter/X, Reddit, and LinkedIn** — and does it lazily: it pulls the
 transcript/caption/text first, and only fetches the specific frames or images it
 actually needs to answer you.
@@ -40,6 +40,7 @@ never less.
 |----------|------------------|
 | **YouTube** | videos (captions → local transcription → frames), channel metadata & ranking by views, thumbnails |
 | **Instagram** | reels, single images, carousels (incl. mixed), profiles; captions + likes |
+| **TikTok** | videos (caption/stats → transcription → frames), photo slideshows (slide images + sound) |
 | **Twitter/X** | tweets (text + full metrics + images), threads/replies/quotes, tweet videos |
 | **Reddit** | post + the comment tree, images/galleries, video posts |
 | **LinkedIn** | video posts (text + transcription + frames), image/text posts |
@@ -136,6 +137,7 @@ scripts/
 └── platforms/
     ├── youtube/    captions · transcribe · frames · meta
     ├── instagram/  profile · post · reel
+    ├── tiktok/     video · post (slideshow)
     ├── twitter/    tweet · video
     ├── reddit/     post · video
     └── linkedin/   post · video

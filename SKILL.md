@@ -1,6 +1,6 @@
 ---
 name: consume
-description: Consume and study any content the user links — YouTube videos/channels, Instagram reels/posts/carousels/profiles, Twitter/X tweets and threads, Reddit posts with comments, and LinkedIn posts. Pulls the transcript/caption/text and, only when needed, the specific frames or images you must see, so you can answer questions, summarize, or analyze it as if you had watched/read it yourself. Use this whenever the user pastes a YouTube, Instagram, Twitter/X, Reddit, or LinkedIn URL, or asks you to watch, study, summarize, analyze, or pull quotes/moments from a video, reel, post, carousel, tweet, thread, or profile — even if they don't say "consume" or "watch".
+description: Consume and study any content the user links — YouTube videos/channels, Instagram reels/posts/carousels/profiles, TikTok videos and photo slideshows, Twitter/X tweets and threads, Reddit posts with comments, and LinkedIn posts. Pulls the transcript/caption/text and, only when needed, the specific frames or images you must see, so you can answer questions, summarize, or analyze it as if you had watched/read it yourself. Use this whenever the user pastes a YouTube, Instagram, TikTok, Twitter/X, Reddit, or LinkedIn URL, or asks you to watch, study, summarize, analyze, or pull quotes/moments from a video, reel, post, carousel, tweet, thread, or profile — even if they don't say "consume" or "watch".
 allowed-tools: Bash, Read
 ---
 
@@ -45,6 +45,7 @@ Detect the platform from the URL and use the matching scripts in
 
 - **YouTube** (`youtube.com`, `youtu.be`) — `youtube/`. No login needed.
 - **Instagram** (`instagram.com`) — `instagram/`. Needs login cookies (see below).
+- **TikTok** (`tiktok.com`) — `tiktok/`. No login needed. `curl_cffi` helps.
 - **Twitter/X** (`x.com`, `twitter.com`) — `twitter/`. Needs `curl_cffi`; threads
   also need cookies.
 - **Reddit** (`reddit.com`) — `reddit/`. Needs login cookies.
@@ -229,6 +230,36 @@ transcribe or pull frames when the task needs the speech or the screen. When a
 task needs several reels transcribed (analyzing a profile), pass all the URLs in
 one call — the model loads once and audio downloads in parallel, far faster than
 one call per reel.
+
+## The TikTok tools — fetch only what a need points at
+
+No login needed. TikTok has two post types: normal **videos** and **photo
+slideshows** (carousels of stills with a background sound). There are no native
+captions, so speech comes from transcription.
+
+### 1. A video — caption/stats, then speech or frames on demand
+
+```bash
+# default: caption + stats (uploader, views, likes, sound)
+python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/tiktok/video.py" "<url>"
+# transcribe the speech (no captions exist):
+python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/tiktok/video.py" "<url>" --transcribe
+# frames at timestamps (downloads first — TikTok blocks remote seek):
+python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/tiktok/video.py" "<url>" --frames 2,6,10
+```
+
+Lots of TikToks carry the message as **on-screen text** over B-roll — if the
+speech/caption doesn't answer the need, grab a frame and read it.
+
+### 2. A photo slideshow — the slide images + caption
+
+```bash
+# downloads each slide so you can Read them; --transcribe for the sound
+python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/tiktok/post.py" "<url>"
+python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/tiktok/post.py" "<url>" --transcribe
+```
+
+`video.py` and `post.py` each detect the wrong type and point you to the other.
 
 ## The Twitter/X tools — fetch only what a need points at
 

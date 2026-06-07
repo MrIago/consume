@@ -1,7 +1,7 @@
 {
   "name": "consume",
   "metadata": {
-    "description": "Give Claude eyes and ears for online content. /consume studies YouTube, Instagram, Twitter/X, Reddit, and LinkedIn on demand — transcript first, frames only when needed."
+    "description": "Give Claude eyes and ears for online content. /consume studies YouTube, Instagram, TikTok, Twitter/X, Reddit, and LinkedIn on demand — transcript first, frames only when needed."
   },
   "owner": {
     "name": "Iago Lima Toledo"
@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "consume",
-      "description": "Consume and study any content the user links — YouTube, Instagram, Twitter/X, Reddit, LinkedIn. Fetches transcript/caption/text on demand and only the specific frames or images it needs. Local-first: GPU transcription via faster-whisper, no paid APIs.",
+      "description": "Consume and study any content the user links — YouTube, Instagram, TikTok, Twitter/X, Reddit, LinkedIn. Fetches transcript/caption/text on demand and only the specific frames or images it needs. Transcription via Groq/OpenAI/local, all with timestamps.",
       "author": {
         "name": "Iago Lima Toledo"
       },
