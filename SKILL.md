@@ -1,6 +1,6 @@
 ---
 name: consume
-description: Consume and study any content the user links — YouTube videos/channels, Instagram reels/posts/carousels/profiles, TikTok videos and photo slideshows, Twitter/X tweets and threads, Reddit posts with comments, and LinkedIn posts. Pulls the transcript/caption/text and, only when needed, the specific frames or images you must see, so you can answer questions, summarize, or analyze it as if you had watched/read it yourself. Use this whenever the user pastes a YouTube, Instagram, TikTok, Twitter/X, Reddit, or LinkedIn URL, or asks you to watch, study, summarize, analyze, or pull quotes/moments from a video, reel, post, carousel, tweet, thread, or profile — even if they don't say "consume" or "watch".
+description: Consume and study any content the user links — YouTube videos/channels, Instagram reels/posts/carousels/profiles, TikTok videos and photo slideshows, Twitter/X tweets and threads, Reddit posts with comments, LinkedIn posts, and online courses with a Panda Video / converteai player (cademi, members areas). Pulls the transcript/caption/text and, only when needed, the specific frames or images you must see, so you can answer questions, summarize, or analyze it as if you had watched/read it yourself. Use this whenever the user pastes a YouTube, Instagram, TikTok, Twitter/X, Reddit, LinkedIn, or course-lesson URL, or asks you to watch, study, transcribe, summarize, analyze, or pull quotes/moments from a video, reel, post, carousel, tweet, thread, profile, or course lesson — even if they don't say "consume" or "watch".
 allowed-tools: Bash, Read
 ---
 
@@ -51,6 +51,10 @@ Detect the platform from the URL and use the matching scripts in
 - **Reddit** (`reddit.com`) — `reddit/`. Needs login cookies.
 - **LinkedIn** (`linkedin.com`) — `linkedin/`. Image/text posts need login cookies;
   video posts work without.
+- **Course platforms with a Panda Video / converteai player** (cademi e.g.
+  `*.cademi.com.br`, members areas, hosted courses) — `course/`. The lesson page
+  is usually login-bound to the device, but the **video stream is on a public
+  CDN** — see the dedicated section below for the hybrid flow.
 
 For other platforms, tell the user it's not supported yet.
 
@@ -348,6 +352,54 @@ If you're unsure whether a LinkedIn post is video or image, try `video.py`
 first; if it reports no video, use `post.py`. The post-text reconstruction for
 image posts is best-effort (LinkedIn's internal format) — the images always come
 through.
+
+## The Course tools (Panda Video / converteai) — the hybrid flow
+
+Course platforms (cademi, members areas) embed lessons through a **Panda Video**
+player served by **converteai**. Two facts make this different from every other
+platform:
+
+1. The lesson page session is **IP/device-bound** — exported cookies in a
+   cloud/headless browser bounce to the login page. So you cannot fetch the page
+   server-side.
+2. But the **stream is on a public CDN** (`cdn.converteai.net/...main.m3u8`) that
+   only checks a `Referer` — **no login needed once you have the URL**.
+
+So the flow is **hybrid**: get the iframe src from the user's *real logged-in
+browser*, then let the script pull the stream from the CDN.
+
+**Step 1 — get the converteai iframe src (Claude-in-Chrome extension).** Navigate
+the logged-in tab to the lesson, then run JS in the page:
+
+```js
+[...document.querySelectorAll('iframe')].map(f => f.src)
+```
+
+You want the `https://scripts.converteai.net/<account>/players/<player>/v4/embed.html`
+one. (The extension's network capture won't see the `.m3u8` — it lives in the
+cross-origin iframe — which is why you read the iframe `src` from the parent DOM.)
+
+**Step 2 — transcribe with the script** (resolves videoId → CDN m3u8 → audio →
+transcript; no cookies):
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/course/lesson.py" "<iframe-src-or-m3u8>" --transcribe --title "1. Introdução"
+# see the screen (slides/code) at moments:
+python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/course/lesson.py" "<iframe-src>" --frames 30,120
+# BATCH a whole module — one iframe src per lesson:
+python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/course/lesson.py" "<src1>" "<src2>" "<src3>" --transcribe
+```
+
+It also accepts a direct `cdn.converteai.net/.../main.m3u8` URL (skips the embed
+fetch). `Referer` is overridable via `WATCH_CONVERTEAI_REFERER` if a platform
+checks a different one.
+
+**Whole course?** Enumerate the lessons from the page's side panel (links like
+`/area/conteudo/aula/<id>` on cademi). For each lesson: navigate (extension) →
+read the iframe src → feed the srcs to `lesson.py` (batch per module). Apply the
+same on-demand discipline — transcribe the sections the task needs, and only pull
+`--frames` when a slide/screen matters. Downloading a whole course is heavy and
+needs the user's OK first.
 
 ## Why on demand
 

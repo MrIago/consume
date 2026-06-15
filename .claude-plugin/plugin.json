@@ -1,7 +1,7 @@
 {
   "name": "consume",
-  "version": "0.8.0",
-  "description": "Consume and study any content the user links — YouTube, Instagram, TikTok, Twitter/X, Reddit, LinkedIn. Fetches transcript/caption/text on demand and only the specific frames or images it needs. Local-first: GPU transcription via faster-whisper, no paid APIs.",
+  "version": "0.9.0",
+  "description": "Consume and study any content the user links — YouTube, Instagram, TikTok, Twitter/X, Reddit, LinkedIn, and online courses (Panda Video / converteai players like cademi). Fetches transcript/caption/text on demand and only the specific frames or images it needs. Local-first: GPU transcription via faster-whisper, no paid APIs.",
   "author": {
     "name": "Iago Lima Toledo"
   },
@@ -18,6 +18,9 @@
     "twitter",
     "reddit",
     "linkedin",
+    "course",
+    "cademi",
+    "pandavideo",
     "transcription",
     "whisper",
     "frames",
