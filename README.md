@@ -1,138 +1,117 @@
-# /consume 🍿
+# consume
 
-**Give Claude eyes and ears for online content — on demand.**
+A Claude Code skill that gives Claude eyes and ears for online video and social content, fetching the minimum the question needs.
 
-Claude can read a webpage and run a script, but it can't *watch a video* or
-*scroll a feed*. `/consume` gives it that, across **YouTube, Instagram, TikTok,
-Twitter/X, Reddit, and LinkedIn** — and does it lazily: it pulls the
-transcript/caption/text first, and only fetches the specific frames or images it
-actually needs to answer you.
+## What it does
 
-```
-/consume https://youtu.be/… summarize the 3 main arguments
-/consume https://www.instagram.com/ocopyqvende/ what makes their hooks work?
-/consume <tweet-url> and turn this thread into a carousel
-```
+Paste a link and ask a question. The skill pulls the transcript, caption, or text, and when the answer depends on the screen, the exact frames at the timestamps that matter. Claude then answers as if it had watched the content itself.
 
----
-
-## The idea: fetch on demand
-
-Most "watch a video" tools are eager — they download everything, sample dozens
-of frames, transcribe the whole thing up front, and burn time and tokens on
-material you may never use.
-
-`/consume` is the opposite. There's an **orchestrator** that reads your intent
-and climbs only as far as the task needs:
-
-1. **Transcript / caption / text** first — cheap, often instant, usually enough.
-2. **Sharper local transcription** — only for the stretch a question actually
-   hinges on (not the whole video).
-3. **Frames or images** — only the specific timestamps/slides you must *see*.
-
-The trigger to fetch anything is always a real need — your task or your
-question — never speculation. Depth is proportional to the goal: never more,
-never less.
-
-## Platforms
+Seven sources:
 
 | Platform | What it consumes |
 |----------|------------------|
-| **YouTube** | videos (captions → local transcription → frames), channel metadata & ranking by views, thumbnails |
-| **Instagram** | reels, single images, carousels (incl. mixed), profiles; captions + likes |
-| **TikTok** | videos (caption/stats → transcription → frames), photo slideshows (slide images + sound) |
+| **YouTube** | videos (captions, audio transcription, frames), channel listings ranked by views, thumbnails and metadata |
+| **Instagram** | reels, single images, carousels (including mixed), profile indexes; captions + likes |
+| **TikTok** | videos (caption/stats, transcription, frames), photo slideshows (slide images + sound) |
 | **Twitter/X** | tweets (text + full metrics + images), threads/replies/quotes, tweet videos |
 | **Reddit** | post + the comment tree, images/galleries, video posts |
 | **LinkedIn** | video posts (text + transcription + frames), image/text posts |
+| **Course platforms** | lessons behind a Panda Video / converteai player (cademi, members areas), via a hybrid browser + CDN flow |
 
-## Requirements
+Real workload: the pipeline transcribed 11h23m of course video in about one hour on a consumer NVIDIA GPU, at zero API cost, using the batch mode of the course tool.
 
-`/consume` runs on your machine (Claude Code) and uses your browser session for
-private content — so it does **not** run on claude.ai (the web sandbox has no
-binaries or your cookies). Works on **Linux, macOS, and Windows** (on Windows use
-`python` instead of `python3`).
-
-> **Easiest setup: just ask.** After installing the plugin, say *"set up
-> consume"* (or just use it). Claude inspects your system — OS, package manager,
-> Python, GPU — and installs **only what's missing**, with the right commands for
-> your machine. No manual checklist needed. The list below is just the reference.
-
-**Tools** (run `python3 scripts/check.py` to verify):
-- `yt-dlp` + `ffmpeg` — required (download, frames, audio)
-- `gallery-dl` — for Instagram / Reddit
-- `curl_cffi` — for Twitter/X (impersonation)
-- `faster-whisper` — only for **local** transcription (see below)
-- `secretstorage` — **Linux only**, to read Chrome cookies (macOS/Windows don't need it)
-
-```bash
-pipx install yt-dlp
-pip install gallery-dl curl_cffi
-pip install faster-whisper            # only if you want local transcription
-pip install secretstorage            # Linux only
-# ffmpeg: sudo apt install ffmpeg   (or: brew install ffmpeg)
+```
+/consume https://youtu.be/… summarize the 3 main arguments
+/consume https://www.instagram.com/<user>/ what makes their hooks work?
+/consume <tweet-url> turn this thread into a carousel
 ```
 
-### Transcription — pick what fits your machine
+## How it works
 
-Transcription auto-selects a backend; **all keep per-segment timestamps** (so
-frame-alignment works either way):
+- **An orchestrator plus small per-platform scripts.** `SKILL.md` reads the intent and picks tools; each platform is a self-contained script under `scripts/platforms/<platform>/`, so one platform's quirks never leak into another. The shared core (`scripts/lib/`) holds transcription and config.
 
-| Your setup | What happens | Setup |
-|---|---|---|
-| **No GPU** (most people) | Cloud transcription via **Groq** (free tier, fast) | set `GROQ_API_KEY` |
-| Have an NVIDIA GPU | Free **local** transcription (faster-whisper) | nothing — it's the default |
-| Prefer OpenAI | Cloud via `whisper-1` | set `OPENAI_API_KEY` |
-| No GPU **and** no key | Local on CPU — works but **slow** | set a key to speed up |
+- **Fetch on demand.** The trigger to fetch anything is a concrete need, never speculation. Transcript first (YouTube captions arrive in ~3s with no download). Audio transcription covers the whole video only when no captions exist; when captions are wrong in one stretch, `--start/--end` transcribes that slice alone, and `--segments 3:30-5:00,12:00-13:00` batches several slices under one model load. Frames come last, seeked straight from the stream at chosen timestamps (~1s per frame, no video download).
 
-Long audio is auto-chunked (overlapping + deduped) for the cloud backends. Force
-a choice with `WATCH_TRANSCRIBE=auto|groq|openai|local`.
+- **A transcription backend cascade.** Groq `whisper-large-v3-turbo` when `GROQ_API_KEY` is set, OpenAI `whisper-1` when `OPENAI_API_KEY` is set, local faster-whisper on the GPU otherwise (CPU fallback). All three return the same shape, timestamped segments in absolute seconds, so frame alignment works with any backend and platforms stay backend-agnostic.
 
-### Configuring keys & login (persists across sessions)
+- **Long audio survives the 25 MB API limit.** The cloud backends split audio into 20-minute chunks that overlap by 10 seconds, so a sentence straddling a boundary lands whole in at least one chunk; the merge step drops the duplicated segments by absolute timestamp. Chunks upload in parallel. The local backend has no size limit and skips chunking.
 
-Settings live in env vars **or** `~/.config/consume/.env`. Easiest: just tell
-Claude your key in chat and it saves it — or run:
+- **The course flow is hybrid because the auth model splits in two.** The lesson page session is bound to the logged-in device, so headless browsers with exported cookies bounce to the login screen. The video stream sits on a public CDN (`cdn.converteai.net/.../main.m3u8`) that checks one `Referer` header and nothing else. So Claude reads the player iframe `src` from the user's real logged-in Chrome tab (one line of JS via the browser extension), and the script does the rest server-side with no cookies: embed URL → videoId → CDN m3u8 → audio → timestamped transcript. Batch mode takes one iframe src per lesson and transcribes a whole module in one call.
 
-```bash
-python3 scripts/lib/config.py GROQ_API_KEY=...                    # transcription (no GPU needed)
-python3 scripts/lib/config.py WATCH_COOKIES_FROM_BROWSER=chrome   # default profile; or "chrome:Profile 1", "firefox", "edge"
-python3 scripts/lib/config.py WATCH_YOUTUBE_API_KEY=...           # optional: rich YouTube channel ranking
-python3 scripts/lib/config.py                                     # show current (masked)
-```
+- **Login rides the user's own browser.** Platforms that need auth (Instagram, Reddit, X threads, LinkedIn image posts) read cookies from a browser profile the user is already logged into (`WATCH_COOKIES_FROM_BROWSER`). The skill stores no passwords and performs no logins.
 
-**Login (cookies).** Instagram, Reddit, and LinkedIn image posts need a
-logged-in browser session — set `WATCH_COOKIES_FROM_BROWSER` to a browser/profile
-where you're logged in (default `chrome`).
+## Usage
 
-## Install
+Runs in Claude Code on your machine. It does not run on claude.ai (the web sandbox has no binaries and no access to your browser cookies). Works on Linux, macOS, and Windows (on Windows use `python` instead of `python3`).
 
-**As a plugin (recommended):**
+### Install
+
+As a plugin (recommended):
 
 ```
 /plugin marketplace add MrIago/consume
 /plugin install consume@consume
 ```
 
-**Manual / developer:**
+Manual / developer:
 
 ```bash
 git clone https://github.com/MrIago/consume.git ~/.claude/skills/consume
 ```
 
-Then just paste a link and ask. Claude loads the skill automatically, or you can
-invoke it with `/consume <url> [what you want]`.
+Then paste a link and ask. Claude loads the skill on its own, or invoke it with `/consume <url> [what you want]`.
 
-## How it works
+### Setup
 
-The skill (`SKILL.md`) is the orchestrator; the real work is in small,
-self-contained per-platform scripts under `scripts/platforms/<platform>/`. Each
-platform is independent on purpose — its own quirks, its own scripts — so they're
-easy to tweak without touching the others.
+Easiest path: after installing, say "set up consume". Claude inspects your system (OS, package manager, Python, GPU) and installs what's missing, with your confirmation, building the right commands for your machine. The list below is the reference.
+
+Tools (run `python3 scripts/check.py` to verify):
+
+- `yt-dlp` + `ffmpeg`: required (download, frames, audio)
+- `gallery-dl`: Instagram / Reddit
+- `curl_cffi`: Twitter/X (impersonation)
+- `faster-whisper`: local transcription only
+- `secretstorage`: Linux only, to read Chrome cookies
+
+```bash
+pipx install yt-dlp
+pip install gallery-dl curl_cffi
+pip install faster-whisper            # only if you want local transcription
+pip install secretstorage             # Linux only
+# ffmpeg: sudo apt install ffmpeg   (or: brew install ffmpeg)
+```
+
+### Transcription: pick what fits your machine
+
+The backend auto-selects; all keep per-segment timestamps, so frame alignment works either way:
+
+| Your setup | What happens | Setup |
+|---|---|---|
+| No GPU (most people) | Cloud transcription via Groq (free tier, fast) | set `GROQ_API_KEY` |
+| NVIDIA GPU | Free local transcription (faster-whisper) | nothing, it is the default |
+| Prefer OpenAI | Cloud via `whisper-1` | set `OPENAI_API_KEY` |
+| No GPU and no key | Local on CPU, works but slow | set a key to speed up |
+
+Force a choice with `WATCH_TRANSCRIBE=auto|groq|openai|local`.
+
+### Keys and login (persist across sessions)
+
+Settings live in env vars or `~/.config/consume/.env`. Tell Claude your key in chat and it saves it, or run:
+
+```bash
+python3 scripts/lib/config.py GROQ_API_KEY=...                    # transcription without a GPU
+python3 scripts/lib/config.py WATCH_COOKIES_FROM_BROWSER=chrome   # default profile; or "chrome:Profile 1", "firefox", "edge"
+python3 scripts/lib/config.py WATCH_YOUTUBE_API_KEY=...           # optional: rich YouTube channel ranking
+python3 scripts/lib/config.py                                     # show current (masked)
+```
+
+### Layout
 
 ```
 scripts/
 ├── check.py                 # dependency preflight
 ├── lib/                     # shared core
-│   ├── transcribe.py        # Groq / OpenAI / local, timestamps, auto-chunking
+│   ├── transcribe.py        # Groq / OpenAI / local, timestamps, chunking
 │   └── config.py            # keys & settings (env var or ~/.config/consume/.env)
 └── platforms/
     ├── youtube/    captions · transcribe · frames · meta
@@ -140,15 +119,18 @@ scripts/
     ├── tiktok/     video · post (slideshow)
     ├── twitter/    tweet · video
     ├── reddit/     post · video
-    └── linkedin/   post · video
+    ├── linkedin/   post · video
+    └── course/     lesson (Panda Video / converteai)
 ```
 
-Transcription runs via Groq, OpenAI, or local faster-whisper — whichever fits
-your machine — and **all keep per-segment timestamps**, so frames line up with
-the words. Local has no upload limit (a 2.5h video works); the cloud backends
-auto-chunk long audio (overlapping + deduped) and run the chunks in parallel.
-Frames are pulled by seeking directly to the timestamps you need (no full-video
-decode), ~167× faster than scanning the whole file.
+## Scope and honest limits
+
+- Instagram, Reddit, and LinkedIn image posts need a logged-in browser session on your machine. Instagram exposes likes and captions but no view counts.
+- Twitter/X needs `curl_cffi`; threads also need cookies. Many X videos are silent UI demos: transcription returns nothing and frames are the right tool.
+- LinkedIn image-post text reconstruction is best-effort against LinkedIn's internal format; the images come through in full resolution regardless.
+- Course support covers the Panda Video / converteai player. Other course players are out of scope. The iframe-src step needs the Claude-in-Chrome extension and your logged-in browser; downloading a whole course is heavy and the skill asks before doing it.
+- These are scrapers, and platforms change. When a script fails it prints what broke and a hint (login, rate limit, missing dependency) instead of a bare stack trace, but breakage on platform updates is a fact of this category.
+- CPU-only local transcription works and is slow. Set a Groq key (free tier) if you have no GPU.
 
 ## License
 
