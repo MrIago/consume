@@ -1,6 +1,6 @@
 ---
 name: consume
-description: Consume and study any content the user links — YouTube videos/channels, Instagram reels/posts/carousels/profiles, TikTok videos and photo slideshows, Twitter/X tweets and threads, Reddit posts with comments, LinkedIn posts, and online courses with a Panda Video / converteai player (cademi, members areas). Pulls the transcript/caption/text and, only when needed, the specific frames or images you must see, so you can answer questions, summarize, or analyze it as if you had watched/read it yourself. Use this whenever the user pastes a YouTube, Instagram, TikTok, Twitter/X, Reddit, LinkedIn, or course-lesson URL, or asks you to watch, study, transcribe, summarize, analyze, or pull quotes/moments from a video, reel, post, carousel, tweet, thread, profile, or course lesson — even if they don't say "consume" or "watch".
+description: Consume and study any content the user links or has on disk — YouTube videos/channels, Instagram reels/posts/carousels/profiles, TikTok videos and photo slideshows, Twitter/X tweets and threads, Reddit posts with comments, LinkedIn posts, online courses with a Panda Video / converteai player (cademi, members areas), and LOCAL media files (meeting recordings, .mp4/.mp3/.wav/.ogg voice notes, screen captures — any path on the machine). Pulls the transcript/caption/text and, only when needed, the specific frames or images you must see, so you can answer questions, summarize, or analyze it as if you had watched/read it yourself. Use this whenever the user pastes a YouTube, Instagram, TikTok, Twitter/X, Reddit, LinkedIn, or course-lesson URL OR a local media file path, or asks you to watch, study, transcribe, summarize, analyze, or pull quotes/moments from a video, reel, post, carousel, tweet, thread, profile, course lesson, meeting recording, or audio file — even if they don't say "consume" or "watch".
 allowed-tools: Bash, Read
 ---
 
@@ -55,6 +55,9 @@ Detect the platform from the URL and use the matching scripts in
   `*.cademi.com.br`, members areas, hosted courses) — `course/`. The lesson page
   is usually login-bound to the device, but the **video stream is on a public
   CDN** — see the dedicated section below for the hybrid flow.
+- **Local files** (any media path on disk: meeting recordings, voice notes,
+  podcasts, screen captures — `.mp4 .mkv .webm .mp3 .wav .m4a .ogg .opus`…) —
+  `local/`. No network, no login. See "The Local file tools" below.
 
 For other platforms, tell the user it's not supported yet.
 
@@ -68,15 +71,23 @@ login fails, tell the user to set this to a browser where they're logged in.
 ## Setup, transcription backends & portability
 
 **Transcription** (the `transcribe.py` / reel `--transcribe` / video `--transcribe`
-tools) picks a backend automatically:
-- If `GROQ_API_KEY` is set → Groq (free tier, fast, keeps timestamps). **Best for
-  users without a GPU.**
-- else if `OPENAI_API_KEY` is set → OpenAI `whisper-1` (keeps timestamps).
-- else → local faster-whisper on the GPU, CPU fallback if no GPU (slow — warns).
+/ local `file.py` tools) picks a backend automatically, in this order:
+1. `GROQ_API_KEY` set → **Groq** (free tier, fast, keeps timestamps). **Always
+   preferred when the key exists.**
+2. else `OPENAI_API_KEY` set → OpenAI `whisper-1` (keeps timestamps).
+3. else `OPENROUTER_API_KEY` set → audio-capable chat model on OpenRouter
+   (default `google/gemini-2.5-flash`). **No per-segment timestamps** — each
+   chunk returns one block stamped with the chunk's start. Fallback only.
+4. else → **local** faster-whisper on the GPU, CPU fallback if no GPU (slow —
+   warns). Two modes: `local` = best quality (large-v3-turbo, default) and
+   `local-fast` = quick-and-rough (whisper-small) for when speed beats accuracy.
 
-All three keep per-segment timestamps, so frame-alignment works with any of them.
+Groq/OpenAI/local keep per-segment timestamps, so frame-alignment works.
 Long audio (>~20min) is automatically chunked (overlapping, deduped) for the API
-backends. Override the choice with `WATCH_TRANSCRIBE=auto|groq|openai|local`.
+backends, chunks transcribed in parallel, and **429/5xx are retried with growing
+backoff** (rate limits produce a wait, never a silent hole in the transcript).
+Override the choice with
+`WATCH_TRANSCRIBE=auto|groq|openai|openrouter|local|local-fast`.
 
 **Configuring keys/settings** — they live in env vars OR a persistent file at
 `~/.config/consume/.env`. If the user gives you a key, save it (never print it
@@ -85,7 +96,8 @@ back):
 python3 "${CLAUDE_SKILL_DIR}/scripts/lib/config.py" GROQ_API_KEY=...
 python3 "${CLAUDE_SKILL_DIR}/scripts/lib/config.py"   # show current (masked)
 ```
-Recognized: `GROQ_API_KEY`, `OPENAI_API_KEY`, `WATCH_TRANSCRIBE`,
+Recognized: `GROQ_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`,
+`WATCH_TRANSCRIBE`, `WATCH_OPENROUTER_MODEL`, `WATCH_WHISPER_FAST_MODEL`,
 `WATCH_YOUTUBE_API_KEY`, `WATCH_COOKIES_FROM_BROWSER`.
 
 **First run / something missing?** This skill relies on external tools (yt-dlp,
@@ -400,6 +412,29 @@ read the iframe src → feed the srcs to `lesson.py` (batch per module). Apply t
 same on-demand discipline — transcribe the sections the task needs, and only pull
 `--frames` when a slide/screen matters. Downloading a whole course is heavy and
 needs the user's OK first.
+
+## The Local file tools — media already on disk
+
+For any media path on the machine — meeting recordings the user downloaded,
+voice notes, podcasts, screen captures. No network, no login; audio is
+extracted with ffmpeg and transcribed via the backend order above (Groq first).
+
+```bash
+# transcribe one or more files (multiple files run in parallel):
+python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/local/file.py" "/path/reuniao.mp4" "/path/audio.ogg"
+# just one stretch / several stretches (only that audio is extracted+uploaded):
+python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/local/file.py" "/path/reuniao.mp4" --start 29:00 --end 34:00
+python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/local/file.py" "/path/reuniao.mp4" --segments 29:00-34:00,1:22:00-1:27:00
+# SEE the screen at moments (local ffmpeg seek, instant) — then Read each path:
+python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/local/file.py" "/path/reuniao.mp4" --frames 30,1:02:10 --resolution 1024
+# long recordings worth keeping → also save one .md per file:
+python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/local/file.py" "/path/reuniao.mp4" --out ./transcricoes
+```
+
+Timestamps print as `[HH:MM:SS]` (local files are often hours long). Same
+on-demand discipline as every platform: transcribe what the task needs; when a
+stretch is unclear or something happens on screen, pull `--frames` at the exact
+timestamps the transcript points at — never a broad scan.
 
 ## Why on demand
 

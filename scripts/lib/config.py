@@ -12,7 +12,10 @@ the .env, instead of editing shell profiles. Works on Linux, macOS, and Windows
 Recognized settings:
   GROQ_API_KEY              transcription via Groq (free tier, fast, timestamps)
   OPENAI_API_KEY            transcription via OpenAI whisper-1 (timestamps)
-  WATCH_TRANSCRIBE          auto | groq | openai | local   (default auto)
+  OPENROUTER_API_KEY        transcription fallback via audio chat model (no timestamps)
+  WATCH_TRANSCRIBE          auto | groq | openai | openrouter | local | local-fast
+  WATCH_OPENROUTER_MODEL    audio-capable model slug (default google/gemini-2.5-flash)
+  WATCH_WHISPER_FAST_MODEL  local-fast model (default Systran/faster-whisper-small)
   WATCH_YOUTUBE_API_KEY     richer/faster YouTube channel metrics (optional)
   WATCH_COOKIES_FROM_BROWSER  e.g. "chrome:Profile 1" — for IG/Reddit/LinkedIn/threads
   WATCH_WHISPER_MODEL/DEVICE/COMPUTE  local faster-whisper overrides (advanced)
@@ -32,11 +35,12 @@ CONFIG_FILE = CONFIG_DIR / ".env"
 
 # Settings the skill knows about (used for `config.py` listing/validation).
 KNOWN = [
-    "GROQ_API_KEY", "OPENAI_API_KEY", "WATCH_TRANSCRIBE",
+    "GROQ_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "WATCH_TRANSCRIBE",
     "WATCH_YOUTUBE_API_KEY", "WATCH_COOKIES_FROM_BROWSER",
-    "WATCH_WHISPER_MODEL", "WATCH_WHISPER_DEVICE", "WATCH_WHISPER_COMPUTE",
+    "WATCH_WHISPER_MODEL", "WATCH_WHISPER_FAST_MODEL",
+    "WATCH_WHISPER_DEVICE", "WATCH_WHISPER_COMPUTE",
     "WATCH_CHUNK_SECONDS", "WATCH_CHUNK_OVERLAP", "WATCH_CONVERTEAI_REFERER",
-    "WATCH_GROQ_MODEL",
+    "WATCH_GROQ_MODEL", "WATCH_OPENROUTER_MODEL",
 ]
 
 
