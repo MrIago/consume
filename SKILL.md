@@ -101,7 +101,7 @@ Recognized: `GROQ_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`,
 `WATCH_YOUTUBE_API_KEY`, `WATCH_COOKIES_FROM_BROWSER`.
 
 **First run / something missing?** This skill relies on external tools (yt-dlp,
-ffmpeg, …) that a plugin install does NOT install. The first time it's used on a
+ffmpeg, …) that cloning it does NOT install. The first time it's used on a
 machine — or whenever a script reports a missing dependency — do a **guided
 setup**: read `references/install.md`, inspect the user's actual system (OS,
 package manager, Python, GPU), and install **only what's missing**, globally,
