@@ -371,17 +371,32 @@ Course platforms (cademi, members areas) embed lessons through a **Panda Video**
 player served by **converteai**. Two facts make this different from every other
 platform:
 
-1. The lesson page session is **IP/device-bound** — exported cookies in a
-   cloud/headless browser bounce to the login page. So you cannot fetch the page
-   server-side.
-2. But the **stream is on a public CDN** (`cdn.converteai.net/...main.m3u8`) that
+1. The lesson page needs the user's session. Any of the three routes below gets
+   it; pick by what's available (measured on cademi, same lesson: cloud
+   `surf/cf.py content --cookies` ~15s, extension ~32s, `surf/local_pw.mjs` ~6s).
+   Earlier notes here claimed the page was strictly IP/device-bound and only the
+   extension could reach it — **that is not the case**: cookie injection into a
+   cloud or local headless browser reaches the lesson page fine. If one route
+   does bounce to `/auth/login`, switch to the extension rather than debugging.
+2. The **stream is on a public CDN** (`cdn.converteai.net/...main.m3u8`) that
    only checks a `Referer` — **no login needed once you have the URL**.
 
-So the flow is **hybrid**: get the iframe src from the user's *real logged-in
-browser*, then let the script pull the stream from the CDN.
+So the flow is: get the iframe src from a logged-in page, then let the script
+pull the stream from the CDN.
 
-**Step 1 — get the converteai iframe src (Claude-in-Chrome extension).** Navigate
-the logged-in tab to the lesson, then run JS in the page:
+**Step 1 — get the converteai iframe src.** Fastest first:
+
+```bash
+# a) local headless with the user's cookies (~6s):
+node "$SURF/scripts/local_pw.mjs" --url "<lesson-url>" --cookies cademi.com.br \
+     --actions '[{"do":"wait","ms":2500}]' \
+     --eval '() => [...document.querySelectorAll("iframe")].map(f=>f.src).filter(s=>s.includes("converteai"))'
+# b) cloud, nothing on the user's machine (~15s):
+python3 "$SURF/scripts/cf.py" content "<lesson-url>" --cookies cademi.com.br | grep -oE 'https://scripts\.converteai\.net/[^"]+'
+```
+
+**c) the extension** — the reliable fallback, and the only one that works if the
+session ever *is* device-bound. Navigate the logged-in tab to the lesson, then:
 
 ```js
 [...document.querySelectorAll('iframe')].map(f => f.src)
@@ -390,6 +405,25 @@ the logged-in tab to the lesson, then run JS in the page:
 You want the `https://scripts.converteai.net/<account>/players/<player>/v4/embed.html`
 one. (The extension's network capture won't see the `.m3u8` — it lives in the
 cross-origin iframe — which is why you read the iframe `src` from the parent DOM.)
+
+**Grab the lesson's text and attachments in the SAME pass — the video is not the
+whole lesson.** Many lessons carry a written description and downloadable PDFs
+(templates, checklists, plans) that the transcript never mentions. All three
+routes above see them; take them while you're on the page:
+
+```js
+({
+  text: document.body.innerText,                       // the written description
+  files: [...document.querySelectorAll('a[href*="/file/download"]')]
+           .map(a => ({ name: a.innerText.trim().split('\n')[0], url: a.href })),
+})
+```
+
+The attachment URLs carry their own token, so `curl -sL "<url>" -o <name>.pdf`
+downloads them with **no cookies** (~0.7s), and you can `Read` the PDF directly.
+Verified on cademi: lesson "Introdução ao Curso" ships two PDFs the video only
+alludes to. Note these files are watermarked with the buyer's name and CPF —
+keep them local, never re-upload or share them.
 
 **Step 2 — transcribe with the script** (resolves videoId → CDN m3u8 → audio →
 transcript; no cookies):
@@ -407,11 +441,43 @@ fetch). `Referer` is overridable via `WATCH_CONVERTEAI_REFERER` if a platform
 checks a different one.
 
 **Whole course?** Enumerate the lessons from the page's side panel (links like
-`/area/conteudo/aula/<id>` on cademi). For each lesson: navigate (extension) →
-read the iframe src → feed the srcs to `lesson.py` (batch per module). Apply the
+`/area/conteudo/aula/<id>` on cademi; a module page lists its own lesson ids, and
+`cf.py links` on the course home lists the modules). For each lesson, one visit
+should collect **iframe src + description text + attachment URLs** — going back
+later for the PDFs doubles the page visits. Then feed the srcs to `lesson.py`
+(batch per module) and `curl` the attachments. Apply the
 same on-demand discipline — transcribe the sections the task needs, and only pull
 `--frames` when a slide/screen matters. Downloading a whole course is heavy and
 needs the user's OK first.
+
+**Do it in two phases, and parallelize phase 2.** Run sequentially, a lesson costs
+~90-120s, and almost all of that is ffmpeg pulling the m3u8 off the CDN, not the
+transcription. Over a full course that is hours of mostly-idle waiting. The three
+steps per lesson (browser → ffmpeg download → transcribe) are independent *across*
+lessons, so:
+
+1. **Collect every iframe src first, in one browser sweep**, into a mapping file
+   (`<lesson-id> <title> <src>` per line). The extension is a single logged-in
+   Chrome, so this part stays sequential, but it is the cheap part (~5s/lesson)
+   and it means the browser is never idle waiting on ffmpeg.
+2. **Then run `lesson.py` in parallel batches of 4-6** over that file. Network
+   bandwidth is the limit, not CPU. Groq handles the concurrency fine.
+
+```bash
+# phase 2: 5 at a time, one src per line in srcs.txt (format: "<title>\t<src>")
+xargs -P 5 -a srcs.txt -d '\n' -I{} sh -c '
+  set -- $(printf "%s" "{}" | tr "\t" "\n" | tr "\n" " ")
+  python3 "'"${CLAUDE_SKILL_DIR}"'/scripts/platforms/course/lesson.py" "$2" --transcribe --title "$1"
+'
+```
+
+Keep the src mapping file on disk after the run: re-extracting a single failed
+lesson then costs one ffmpeg call instead of a whole browser round trip.
+
+**Raise the timeout for long lessons.** The default 600s is not enough for videos
+past roughly 15 minutes. Either bump the per-call timeout for the whole run or
+retry the failures with a larger one, and log what failed rather than silently
+dropping it.
 
 ## The Local file tools — media already on disk
 
