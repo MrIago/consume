@@ -307,10 +307,26 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/tiktok/post.py" "<url>" --transcr
 
 `video.py` and `post.py` each detect the wrong type and point you to the other.
 
-⚠️ **No comments on TikTok.** Tested: yt-dlp's TikTok extractor returns zero
-comments even with `--write-comments` (the platform does not expose them in the
-page payload it reads). If a task needs the comment section of a TikTok, the
-fallback is `/surf` on the post URL — not this skill.
+### 3. Comments — a second, independent source
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/tiktok/comments.py" "<url>" --limit 50 --min-likes 1000
+```
+
+Sorted by likes, replies nested, and the platform's own engagement signals
+flagged (`📌pinned`, `❤️author` when the creator liked it — the highest-value
+lines in the section).
+
+⚠️ **This one needs login cookies**, unlike the rest of TikTok here. Reason:
+yt-dlp reports `comment_count` but extracts **zero** comments (its TikTok
+extractor never implemented the fetch), so the script goes to the same internal
+endpoint the web player uses, and the `msToken` session cookie is what unlocks
+it. If it returns empty, the cookie is stale: open tiktok.com in the browser and
+retry.
+
+**`--min-likes` is what keeps this readable.** A viral TikTok has tens of
+thousands of comments and most are noise; likes are the crowd having already
+filtered for you. Start high (1000+) on a big video, lower it on a small one.
 
 ## The Twitter/X tools — fetch only what a need points at
 
