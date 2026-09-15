@@ -120,8 +120,26 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/youtube/captions.py" "<url>"
 ```
 
 Native captions in ~3s, no video download. Each line is `[MM:SS] text`. This is
-enough for most consumption and most questions. If it prints `NO_CAPTIONS`, get
-the transcript from audio instead (tool 2, whole video).
+enough for most consumption and most questions.
+
+**Fall through to tool 2 (Groq/Whisper) whenever the captions are missing OR
+bad.** Studying a subject means actually understanding each video, so a garbled
+caption track is not good enough: a wrong technical term or a mangled sentence
+becomes a wrong claim in whatever you write from it.
+
+How to tell a caption track is bad, without reading all of it:
+
+| Symptom | Check |
+|---|---|
+| **No captions at all** | The script prints `NO_CAPTIONS` |
+| **Suspiciously sparse** | Divide duration by line count. Over ~25s per line means whole stretches are missing |
+| **Auto-translated** | Portuguese speech coming back as English text (or vice-versa), often with mangled proper nouns. Groq keeps the original language |
+| **Garbled terms** | Names, tools and jargon spelled inconsistently. Auto-captions guess; Whisper is far better here |
+| **Music/no speech** | A handful of lines like "Thank you." or "[Music]". Nothing to recover: skip the video, it has no spoken content |
+
+⚠️ **Batch it.** When re-transcribing several videos, pass them together or run
+them in parallel — the download is the slow part, not the transcription, and Groq
+handles the concurrency fine.
 
 ### 2. Sharper transcription from audio — local, and slice-able
 
