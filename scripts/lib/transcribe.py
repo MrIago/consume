@@ -208,7 +208,8 @@ def _transcribe_api(audio_path: Path, endpoint: str, key: str, model: str, label
 
     def do_chunk(idx_start):
         idx, start = idx_start
-        piece = _slice_audio(audio_path, start, CHUNK_SECONDS, tmp / f"chunk_{idx}.mp3")
+        piece = _slice_audio(audio_path, start, CHUNK_SECONDS,
+                             tmp / f"{audio_path.stem}_chunk_{idx}_{uuid.uuid4().hex[:6]}.mp3")
         try:
             return start, _segs_from_verbose(_post(endpoint, key, model, piece), start)
         except urllib.error.HTTPError as exc:
@@ -253,7 +254,8 @@ def _transcribe_openrouter(audio_path: Path) -> list[dict]:
     def do_chunk(idx_start):
         idx, start = idx_start
         # always re-encode the slice to mp3 so the declared format is true
-        piece = _slice_audio(audio_path, start, CHUNK_SECONDS, tmp / f"or_chunk_{idx}.mp3")
+        piece = _slice_audio(audio_path, start, CHUNK_SECONDS,
+                             tmp / f"{audio_path.stem}_or_chunk_{idx}_{uuid.uuid4().hex[:6]}.mp3")
         payload = json.dumps({
             "model": OPENROUTER_MODEL,
             "messages": [{"role": "user", "content": [

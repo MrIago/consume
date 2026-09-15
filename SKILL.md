@@ -1,6 +1,6 @@
 ---
 name: consume
-description: Consume and study any content the user links or has on disk — YouTube videos/channels, Instagram reels/posts/carousels/profiles, TikTok videos and photo slideshows, Twitter/X tweets and threads, Reddit posts with comments, LinkedIn posts, online courses with a Panda Video / converteai player (cademi, members areas), and LOCAL media files (meeting recordings, .mp4/.mp3/.wav/.ogg voice notes, screen captures — any path on the machine). Pulls the transcript/caption/text and, only when needed, the specific frames or images you must see, so you can answer questions, summarize, or analyze it as if you had watched/read it yourself. Use this whenever the user pastes a YouTube, Instagram, TikTok, Twitter/X, Reddit, LinkedIn, or course-lesson URL OR a local media file path, or asks you to watch, study, transcribe, summarize, analyze, or pull quotes/moments from a video, reel, post, carousel, tweet, thread, profile, course lesson, meeting recording, or audio file — even if they don't say "consume" or "watch".
+description: Consume and study any content the user links or has on disk — YouTube videos/channels, Instagram reels/posts/carousels/profiles, TikTok videos and photo slideshows, Twitter/X tweets and threads, Reddit posts with comments, LinkedIn posts, online courses with a Panda Video / converteai player (cademi, members areas), and LOCAL media files (meeting recordings, .mp4/.mp3/.wav/.ogg voice notes, screen captures — any path on the machine). Pulls the transcript/caption/text, the comment section when studying a subject (YouTube and Instagram), and, only when needed, the specific frames or images you must see, so you can answer questions, summarize, or analyze it as if you had watched/read it yourself. Use this whenever the user pastes a YouTube, Instagram, TikTok, Twitter/X, Reddit, LinkedIn, or course-lesson URL OR a local media file path, or asks you to watch, study, transcribe, summarize, analyze, read the comments of, or pull quotes/moments from a video, reel, post, carousel, tweet, thread, profile, course lesson, meeting recording, or audio file — even if they don't say "consume" or "watch".
 allowed-tools: Bash, Read
 ---
 
@@ -161,7 +161,26 @@ printed frame path** and align it to the transcript by its `t=MM:SS`. Request
 only the few frames the need points at — never a broad scan. Add `--resolution
 1024` if the user must read small on-screen text.
 
-### 4. Marketing metadata — title, description, thumbnail, stats
+### 4. Comments — a second, independent source
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/youtube/comments.py" "<url>" --limit 30 --min-likes 2
+```
+
+Sorted by likes, replies nested under their parent, and the author's own
+replies flagged. No video download.
+
+**This is not a deeper level of the transcript — it is a different source.**
+The comment section routinely carries what the video does not: a fix for a
+friction the author showed but never solved, a viewer who tried the same thing
+and failed (the negative case), a correction of something the author got wrong,
+and the question everybody has (visible as the most-upvoted one).
+
+Pull comments when the task is to **study a subject** (especially feeding
+`/digerir`), not when answering a single question about the video. `--min-likes`
+is what keeps it cheap: likes are the crowd already having filtered for you.
+
+### 5. Marketing metadata — title, description, thumbnail, stats
 
 For tasks about the *packaging* of a video rather than its content — why a
 title or thumbnail works, a channel's strategy, ranking a channel by views.
@@ -247,6 +266,17 @@ task needs several reels transcribed (analyzing a profile), pass all the URLs in
 one call — the model loads once and audio downloads in parallel, far faster than
 one call per reel.
 
+### Comments on a post or reel
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/instagram/comments.py" "<post-url>" --limit 40
+```
+
+Sorted by likes, with the author's own replies flagged `⭐AUTHOR` — on Instagram
+the author answers in the comments often, so a question the caption left open is
+frequently resolved there. Needs the same login cookies as the other Instagram
+scripts. No reply threading (Instagram does not expose it).
+
 ## The TikTok tools — fetch only what a need points at
 
 No login needed. TikTok has two post types: normal **videos** and **photo
@@ -276,6 +306,11 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/tiktok/post.py" "<url>" --transcr
 ```
 
 `video.py` and `post.py` each detect the wrong type and point you to the other.
+
+⚠️ **No comments on TikTok.** Tested: yt-dlp's TikTok extractor returns zero
+comments even with `--write-comments` (the platform does not expose them in the
+page payload it reads). If a task needs the comment section of a TikTok, the
+fallback is `/surf` on the post URL — not this skill.
 
 ## The Twitter/X tools — fetch only what a need points at
 
