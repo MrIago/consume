@@ -350,9 +350,18 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/twitter/tweet.py" "<url>" --threa
 ```
 
 Prints the text, metrics, and any images (Read each). It flags when the tweet is
-a reply/quote (so you know context exists) and whether it has a video. Use
-`--thread` only when the meaning depends on the surrounding conversation — not by
-reflex.
+a reply/quote (so you know context exists) and whether it has a video.
+
+**When to use `--thread`** depends on what you are here for:
+
+- **Answering a single question** about the tweet: only if the meaning depends on
+  the surrounding conversation. Not by reflex.
+- **Studying a subject** (especially feeding `/digerir`): **use it by default.**
+  The replies are this platform's comment section, and they carry the same value
+  as any other: the correction, the independent confirmation, the Community Note
+  the original tweet never mentions. X is the richest of them all here, since it
+  prints views, likes, retweets, replies, quotes and bookmarks per reply, so the
+  numbers themselves tell you which reply the crowd validated.
 
 ### A tweet's video — text, transcription, frames
 
