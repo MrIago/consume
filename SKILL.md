@@ -119,7 +119,7 @@ commands for their machine.
 python3 "${CLAUDE_SKILL_DIR}/scripts/platforms/youtube/captions.py" "<url>"
 ```
 
-Native captions in ~3s, no video download. Each line is `[MM:SS] text`. This is
+Native captions in ~3s, no video download. It picks the track of the language the video is actually spoken in (the `-orig` one) and never asks YouTube for auto-translated tracks, which come back as worse text and trigger HTTP 429. If yt-dlp starts failing, update it first: `pip install --user --break-system-packages -U yt-dlp curl_cffi`. Each line is `[MM:SS] text`. This is
 enough for most consumption and most questions.
 
 **Fall through to tool 2 (Groq/Whisper) whenever the captions are missing OR

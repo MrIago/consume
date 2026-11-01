@@ -24,7 +24,11 @@ from pathlib import Path
 
 # English + Portuguese, manual and auto. "*-orig" catches the original-language
 # auto track when the UI language differs.
-SUB_LANGS = "en.*,pt.*,en-orig,pt-orig"
+# Original-language tracks first: "*-orig" is what the speaker actually said.
+# Plain "en.*"/"pt.*" also match YouTube's auto-TRANSLATED tracks, which are
+# worse text and trigger HTTP 429 rate limits. Those are only a fallback.
+SUB_LANGS = "en.*-orig,pt.*-orig,en-orig,pt-orig"
+SUB_LANGS_FALLBACK = "en.*,pt.*"
 
 TS_RE = re.compile(
     r"(\d{2}):(\d{2}):(\d{2})[.,](\d{3})\s+-->\s+(\d{2}):(\d{2}):(\d{2})[.,](\d{3})"
@@ -122,16 +126,34 @@ def format_transcript(segments: list[dict], group_seconds: float = 12.0) -> str:
     return "\n".join(lines)
 
 
-def _pick_subtitle(out_dir: Path) -> Path | None:
+def spoken_language(url: str) -> str | None:
+    """Base language YouTube reports for the video's audio (e.g. "pt" for pt-BR)."""
+    r = subprocess.run(["yt-dlp", "--skip-download", "--no-playlist", "--print", "%(language)s", "--", url],
+                       capture_output=True, text=True)
+    lang = (r.stdout or "").strip().splitlines()[-1:] or [""]
+    lang = lang[0].strip()
+    return lang.split("-")[0].lower() if lang and lang != "NA" else None
+
+
+def _pick_subtitle(out_dir: Path, lang: str | None = None) -> Path | None:
     candidates = sorted(out_dir.glob("video*.vtt"))
     if not candidates:
         return None
-    # Prefer English, then anything available.
-    preferred = [c for c in candidates if ".en" in c.name]
-    return preferred[0] if preferred else candidates[0]
+    # The spoken language's own track first; YouTube sometimes also lists an
+    # "-orig" track in another language that is really a translation.
+    if lang:
+        hit = [c for c in candidates if f".{lang}" in c.name and "-orig" in c.name] or \
+              [c for c in candidates if f".{lang}" in c.name]
+        if hit:
+            return hit[0]
+    for marker in ("-orig", ".pt", ".en"):
+        hit = [c for c in candidates if marker in c.name]
+        if hit:
+            return hit[0]
+    return candidates[0]
 
 
-def fetch_captions(url: str, out_dir: Path) -> Path | None:
+def fetch_captions(url: str, out_dir: Path, langs: str = SUB_LANGS, lang: str | None = None) -> Path | None:
     if shutil.which("yt-dlp") is None:
         raise SystemExit("yt-dlp is not installed (brew install yt-dlp / pipx install yt-dlp)")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -140,7 +162,7 @@ def fetch_captions(url: str, out_dir: Path) -> Path | None:
         "--skip-download",
         "--write-subs",
         "--write-auto-subs",
-        "--sub-langs", SUB_LANGS,
+        "--sub-langs", langs,
         "--sub-format", "vtt",
         "--convert-subs", "vtt",
         "--no-playlist",
@@ -151,7 +173,7 @@ def fetch_captions(url: str, out_dir: Path) -> Path | None:
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.stderr:
         print(result.stderr, file=sys.stderr)
-    return _pick_subtitle(out_dir)
+    return _pick_subtitle(out_dir, lang)
 
 
 def main() -> int:
@@ -161,7 +183,11 @@ def main() -> int:
     url = sys.argv[1]
     out_dir = Path(tempfile.mkdtemp(prefix="watch-yt-cap-"))
     print(f"[watch] fetching YouTube captions (no video download)…", file=sys.stderr)
-    sub = fetch_captions(url, out_dir)
+    lang = spoken_language(url)
+    langs = f"{lang}.*-orig,{lang}-orig,{SUB_LANGS}" if lang else SUB_LANGS
+    sub = fetch_captions(url, out_dir, langs, lang)
+    if not sub:
+        sub = fetch_captions(url, out_dir, SUB_LANGS_FALLBACK, lang)
     if not sub:
         print("NO_CAPTIONS", file=sys.stderr)
         print("NO_CAPTIONS")
